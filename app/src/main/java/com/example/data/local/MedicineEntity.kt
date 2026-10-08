@@ -1,5 +1,6 @@
 package com.example.data.local
 
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 
@@ -21,5 +22,9 @@ data class MedicineEntity(
     val isActive: Boolean = true,
     val isAsNeeded: Boolean = false, // مصرف در مواقع نیاز / لزوم (PRN)
     val notes: String = "",
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    @ColumnInfo(defaultValue = "1.0")
+    val doseAmount: Double = 1.0, // مقدار هر نوبت (مثلاً ۲)
+    @ColumnInfo(defaultValue = "'عدد'")
+    val doseUnit: String = "عدد" // واحد مقدار (عدد، قاشق، میلی‌لیتر، پاف، ...)
 )

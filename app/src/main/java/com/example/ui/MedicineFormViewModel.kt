@@ -19,6 +19,8 @@ data class MedicineFormState(
     val name: String = "",
     val type: String = "قرص",
     val dosage: String = "۱ عدد",
+    val doseAmount: String = "۱",
+    val doseUnit: String = "عدد",
     val instructions: String = "همراه غذا با آب فراوان",
     val frequencyHours: Int = 8,
     val firstHour: Int = 8,
@@ -45,8 +47,6 @@ class MedicineFormViewModel(
     val uiState: StateFlow<MedicineFormState> = _uiState.asStateFlow()
 
     init {
-        // جستجوی اولیه عکس‌ها بر اساس نوع پیش‌فرض
-        searchMedicineImages("قرص")
     }
 
     fun resetForm() {
@@ -66,11 +66,12 @@ class MedicineFormViewModel(
             notes = "",
             isSearchingImages = false,
             searchResults = emptyList(),
+            doseAmount = "۱",
+            doseUnit = "عدد",
             isSaving = false,
             saveSuccess = false,
             errorMessage = null
         )
-        searchMedicineImages("قرص")
     }
 
     fun loadMedicine(medicineId: Long) {
@@ -86,6 +87,8 @@ class MedicineFormViewModel(
                     name = med.name,
                     type = med.type,
                     dosage = med.dosage,
+                    doseAmount = formatAmount(med.doseAmount),
+                    doseUnit = med.doseUnit,
                     instructions = med.instructions,
                     frequencyHours = med.frequencyHours,
                     firstHour = med.firstIntakeHour,
@@ -115,6 +118,27 @@ class MedicineFormViewModel(
         _uiState.value = _uiState.value.copy(dosage = dosage)
     }
 
+    /** مقدار و واحد دوز؛ متن دوز هم بر اساس آن ساخته می‌شود تا نماد بصری همخوان بماند. */
+    fun updateDoseAmount(amount: String) {
+        val state = _uiState.value
+        _uiState.value = state.copy(doseAmount = amount, dosage = "$amount ${state.doseUnit}".trim())
+    }
+
+    fun updateDoseUnit(unit: String) {
+        val state = _uiState.value
+        _uiState.value = state.copy(doseUnit = unit, dosage = "${state.doseAmount} $unit".trim())
+    }
+
+    private fun parseAmount(text: String): Double {
+        val normalized = text.trim()
+            .map { c -> if (c in '۰'..'۹') ('0' + (c - '۰')) else if (c == '٫' || c == ',') '.' else c }
+            .joinToString("")
+        return normalized.toDoubleOrNull()?.takeIf { it > 0 } ?: 1.0
+    }
+
+    private fun formatAmount(value: Double): String =
+        if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
+
     fun updateInstructions(instructions: String) {
         _uiState.value = _uiState.value.copy(instructions = instructions)
     }
@@ -142,7 +166,7 @@ class MedicineFormViewModel(
     fun selectImage(result: MedicineSearchResult) {
         _uiState.value = _uiState.value.copy(
             imageUrl = result.imageUrl,
-            imageSourceTag = "${result.source} (تأیید شده ✓)"
+            imageSourceTag = result.source
         )
     }
 
@@ -193,6 +217,8 @@ class MedicineFormViewModel(
                     name = state.name.trim(),
                     type = state.type,
                     dosage = state.dosage.trim(),
+                    doseAmount = parseAmount(state.doseAmount),
+                    doseUnit = state.doseUnit,
                     instructions = state.instructions.trim(),
                     frequencyHours = state.frequencyHours,
                     firstIntakeHour = state.firstHour,

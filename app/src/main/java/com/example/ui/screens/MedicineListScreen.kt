@@ -284,7 +284,7 @@ fun MedicineManagementItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 PastelBadge(
-                    text = medicine.imageSourceTag.ifBlank { "عکس آنلاین ✓" },
+                    text = medicine.imageSourceTag.ifBlank { "عکس نمونه" },
                     backgroundColor = Color.White.copy(alpha = 0.85f),
                     textColor = MaterialTheme.colorScheme.primary
                 )

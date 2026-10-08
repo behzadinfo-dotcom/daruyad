@@ -104,6 +104,8 @@ fun HomeScreen(
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        item { PermissionStatusCard() }
+
         // بنر هدر گرافیکی پاستیلی
         item {
             PastelHeroBanner(
@@ -375,23 +377,15 @@ fun SessionCardItem(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(44.dp)
-                            .clip(CircleShape)
-                            .background(
-                                if (session.isAllTaken) SuccessGreen.copy(alpha = 0.15f)
-                                else MaterialTheme.colorScheme.primaryContainer
-                            ),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = if (session.isAllTaken) Icons.Default.CheckCircle else Icons.Default.AccessTime,
-                            contentDescription = null,
-                            tint = if (session.isAllTaken) SuccessGreen else MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                    }
+                    DoseStatusOrb(
+                        status = if (session.isAllTaken) "TAKEN" else "PENDING",
+                        hour = session.batchHour,
+                        onTap = if (session.isAllTaken) null else onQuickTakeAll,
+                        modifier = Modifier,
+                        orbSize = 72.dp,
+                        iconSize = 40.dp,
+                        showTime = false
+                    )
                     Spacer(modifier = Modifier.width(12.dp))
                     Column {
                         Text(

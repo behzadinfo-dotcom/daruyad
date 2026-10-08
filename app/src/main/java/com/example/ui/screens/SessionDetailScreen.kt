@@ -323,6 +323,14 @@ fun PictorialMedicineCard(
         cornerRadius = 24.dp
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
+            // نشانه‌ی وضعیت بزرگ و متحرک (برای کسانی که خواندن بلد نیستند)
+            DoseStatusOrb(
+                status = doseItem.status,
+                hour = batchHour,
+                onTap = if (doseItem.status == "PENDING") onMarkTaken else null
+            )
+            Spacer(modifier = Modifier.height(10.dp))
+
             // تصویر بزرگ و مصور دارو
             Box(
                 modifier = Modifier
@@ -372,7 +380,7 @@ fun PictorialMedicineCard(
                         .padding(10.dp)
                 ) {
                     PastelBadge(
-                        text = medicine.imageSourceTag.ifBlank { "تأیید شده آنلاین ✓" },
+                        text = medicine.imageSourceTag.ifBlank { "عکس نمونه" },
                         backgroundColor = Color.White.copy(alpha = 0.9f),
                         textColor = MaterialTheme.colorScheme.primary
                     )

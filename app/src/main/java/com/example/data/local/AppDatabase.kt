@@ -3,11 +3,13 @@ package com.example.data.local
 import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import androidx.room.RoomDatabase
 
 @Database(
     entities = [MedicineEntity::class, IntakeLogEntity::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -15,6 +17,14 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun intakeLogDao(): IntakeLogDao
 
     companion object {
+        /** نسخهٔ ۲ به ۳: افزودن مقدار و واحد دوز بدون پاک شدن داده‌های کاربر */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE medicines ADD COLUMN doseAmount REAL NOT NULL DEFAULT 1.0")
+                db.execSQL("ALTER TABLE medicines ADD COLUMN doseUnit TEXT NOT NULL DEFAULT 'عدد'")
+            }
+        }
+
         @Volatile
         private var INSTANCE: AppDatabase? = null
 
@@ -25,7 +35,7 @@ abstract class AppDatabase : RoomDatabase() {
                     AppDatabase::class.java,
                     "med_remind_database"
                 )
-                    .fallbackToDestructiveMigration()
+                    .addMigrations(MIGRATION_2_3)
                     .build()
                 INSTANCE = instance
                 instance

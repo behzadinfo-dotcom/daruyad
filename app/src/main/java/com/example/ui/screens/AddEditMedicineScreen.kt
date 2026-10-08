@@ -1,5 +1,10 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.FilterChip
+import androidx.compose.ui.text.input.KeyboardType
 import android.Manifest
 import android.net.Uri
 import androidx.activity.compose.BackHandler
@@ -645,6 +650,39 @@ fun AddEditMedicineScreen(
                             )
                         }
                         Spacer(modifier = Modifier.height(10.dp))
+                        // مقدار مصرف در هر نوبت + واحد (مثلاً ۲ قاشق، ۱ پاف)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = state.doseAmount,
+                                onValueChange = { viewModel.updateDoseAmount(it) },
+                                label = { Text("مقدار") },
+                                modifier = Modifier
+                                    .width(104.dp)
+                                    .testTag("medicine_dose_amount"),
+                                shape = RoundedCornerShape(16.dp),
+                                singleLine = true,
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                            )
+                            Row(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                DoseUnits.forEach { unit ->
+                                    FilterChip(
+                                        selected = state.doseUnit == unit,
+                                        onClick = { viewModel.updateDoseUnit(unit) },
+                                        label = { Text(unit) }
+                                    )
+                                }
+                            }
+                        }
                         OutlinedTextField(
                             value = state.dosage,
                             onValueChange = { viewModel.updateDosage(it) },
@@ -1149,3 +1187,7 @@ fun AddEditMedicineScreen(
         )
     }
 }
+
+
+/** واحدهای مقدار مصرف */
+private val DoseUnits = listOf("عدد", "قاشق", "میلی‌لیتر", "پاف", "قطره", "اپلیکاتور")

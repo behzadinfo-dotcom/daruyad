@@ -87,7 +87,10 @@ class MedicineRepository(
      * 3. میانگین ساعت هر خوشه را محاسبه کرده و به ضریب 15 دقیقه (یا رند) گرد می‌کند.
      * 4. برای هر نوبت سوابق IntakeLog را ایجاد یا همگام می‌کند و جلسات را برمی‌گرداند.
      */
-    suspend fun generateDailySessions(date: Calendar = Calendar.getInstance()): List<ClusteredIntakeSession> {
+    suspend fun generateDailySessions(
+        date: Calendar = Calendar.getInstance(),
+        roundingMinutes: Int = 15
+    ): List<ClusteredIntakeSession> {
         val activeMeds = medicineDao.getActiveMedicinesSync().filter { !it.isAsNeeded }
         if (activeMeds.isEmpty()) return emptyList()
 
@@ -157,7 +160,8 @@ class MedicineRepository(
             val avgMinuteOfDay = cluster.map { it.minuteOfDay }.average().roundToInt()
 
             // رند کردن میانگین به مضرب 15 دقیقه (مثلاً 00, 15, 30, 45)
-            val roundedMinuteOfDay = ((avgMinuteOfDay + 7) / 15) * 15 % 1440
+            val step = roundingMinutes.coerceIn(5, 60)
+            val roundedMinuteOfDay = ((avgMinuteOfDay + step / 2) / step) * step % 1440
             val batchHour = roundedMinuteOfDay / 60
             val batchMinute = roundedMinuteOfDay % 60
 

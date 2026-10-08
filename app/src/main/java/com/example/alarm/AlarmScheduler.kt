@@ -11,39 +11,48 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.Calendar
 
+/**
+ * زمان‌بندی آلارم‌ها.
+ * هر دوز دقیقاً در زمان تجویزی خودش یادآوری می‌شود (بدون میانگین‌گیری).
+ * کد درخواست هر آلارم = دقیقهٔ روز * 100 + شمارهٔ تکرار، تا تکرارها قابل لغو باشند.
+ */
 class AlarmScheduler(
     private val context: Context,
     private val repository: MedicineRepository
 ) {
     private val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+    private val prefs = context.getSharedPreferences("alarm_slots", Context.MODE_PRIVATE)
 
+    fun canScheduleExact(): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.S || alarmManager.canScheduleExactAlarms()
+
+    /** همه آلارم‌های قبلی را لغو و آلارم‌های فعلی را برای نوبت بعدی هر دوز ثبت می‌کند. */
     suspend fun rescheduleAllSmartAlarms() = withContext(Dispatchers.IO) {
         try {
-            // ایجاد نشست‌های تجمیعی امروز
-            val today = Calendar.getInstance()
-            val sessions = repository.generateDailySessions(today)
+            cancelAllKnownSlots()
+
+            val sessions = repository.generateDailySessions(Calendar.getInstance())
             val nowMillis = System.currentTimeMillis()
 
+            // نام داروهای هر دقیقه (هر دوز در زمان دقیق خودش)
+            val namesByMinute = linkedMapOf<Int, MutableList<String>>()
             for (session in sessions) {
-                val targetCal = Calendar.getInstance().apply {
-                    set(Calendar.HOUR_OF_DAY, session.batchHour)
-                    set(Calendar.MINUTE, session.batchMinute)
-                    set(Calendar.SECOND, 0)
-                    set(Calendar.MILLISECOND, 0)
+                for (dose in session.doseItems) {
+                    namesByMinute.getOrPut(minuteOfDay(dose.scheduledTime)) { mutableListOf() }
+                        .add(dose.medicine.name)
                 }
+            }
 
-                // اگر زمان امروز گذشته، برای فردا ست شود
-                if (targetCal.timeInMillis < nowMillis) {
-                    targetCal.add(Calendar.DAY_OF_YEAR, 1)
-                }
-
-                val medNames = session.doseItems.joinToString("، ") { it.medicine.name }
+            for ((minute, names) in namesByMinute) {
+                val hour = minute / 60
+                val min = minute % 60
                 scheduleExactAlarm(
-                    hour = session.batchHour,
-                    minute = session.batchMinute,
-                    triggerAtMillis = targetCal.timeInMillis,
-                    medicinesSummary = medNames
+                    hour = hour,
+                    minute = min,
+                    triggerAtMillis = nextOccurrence(hour, min, nowMillis),
+                    medicinesSummary = names.distinct().joinToString("، ")
                 )
+                rememberSlot(minute)
             }
         } catch (e: Exception) {
             Log.e("AlarmScheduler", "Error rescheduling smart alarms: ${e.message}", e)
@@ -55,7 +64,8 @@ class AlarmScheduler(
         minute: Int,
         triggerAtMillis: Long,
         medicinesSummary: String,
-        repeatAttempt: Int = 0
+        repeatAttempt: Int = 0,
+        isTest: Boolean = false
     ) {
         val intent = Intent(context, MedicineAlarmReceiver::class.java).apply {
             action = MedicineAlarmReceiver.ACTION_MEDICINE_ALARM
@@ -63,49 +73,87 @@ class AlarmScheduler(
             putExtra(MedicineAlarmReceiver.EXTRA_BATCH_MINUTE, minute)
             putExtra(MedicineAlarmReceiver.EXTRA_MED_NAMES, medicinesSummary)
             putExtra(MedicineAlarmReceiver.EXTRA_REPEAT_ATTEMPT, repeatAttempt)
+            putExtra(MedicineAlarmReceiver.EXTRA_IS_TEST, isTest)
         }
 
-        val requestCode = hour * 100 + minute + (repeatAttempt * 10000)
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            requestCode,
+            requestCode(hour * 60 + minute, repeatAttempt),
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                alarmManager.setExactAndAllowWhileIdle(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAtMillis,
-                    pendingIntent
-                )
-            } else {
-                alarmManager.setExact(
-                    AlarmManager.RTC_WAKEUP,
-                    triggerAtMillis,
-                    pendingIntent
-                )
-            }
+            alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
         } catch (e: SecurityException) {
-            // در صورت عدم اعطای مجوز دقیق، فال‌بک به set
-            alarmManager.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
+            // مجوز آلارم دقیق داده نشده: فال‌بک غیردقیق (کاربر باید از تنظیمات مجوز بدهد)
+            alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent)
         }
     }
 
+    /** لغو تکرارهای یک نوبت (شماره تکرار ۱ به بالا). نوبت اصلی روزانه دست‌نخورده می‌ماند. */
+    fun cancelRepeats(minuteOfDay: Int) {
+        for (r in 1..MAX_REPEAT) cancelRequest(minuteOfDay, r)
+    }
+
+    /** لغو کامل یک نوبت، شامل نوبت روزانه. */
     fun cancelAlarm(hour: Int, minute: Int) {
+        val minuteOfDay = hour * 60 + minute
+        for (r in 0..MAX_REPEAT) cancelRequest(minuteOfDay, r)
+    }
+
+    private fun cancelRequest(minuteOfDay: Int, repeatAttempt: Int) {
         val intent = Intent(context, MedicineAlarmReceiver::class.java).apply {
             action = MedicineAlarmReceiver.ACTION_MEDICINE_ALARM
         }
-        val requestCode = hour * 100 + minute
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            requestCode,
+            requestCode(minuteOfDay, repeatAttempt),
             intent,
             PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE
         )
         if (pendingIntent != null) {
             alarmManager.cancel(pendingIntent)
+            pendingIntent.cancel()
+        }
+    }
+
+    private fun cancelAllKnownSlots() {
+        val known = prefs.getStringSet(KEY_SLOTS, emptySet()) ?: emptySet()
+        for (s in known) {
+            s.toIntOrNull()?.let { cancelAlarm(it / 60, it % 60) }
+        }
+        prefs.edit().remove(KEY_SLOTS).apply()
+    }
+
+    private fun rememberSlot(minuteOfDay: Int) {
+        val current = prefs.getStringSet(KEY_SLOTS, emptySet())?.toMutableSet() ?: mutableSetOf()
+        current.add(minuteOfDay.toString())
+        prefs.edit().putStringSet(KEY_SLOTS, current).apply()
+    }
+
+    companion object {
+        private const val KEY_SLOTS = "scheduled_minutes"
+        const val MAX_REPEAT = 50
+
+        fun requestCode(minuteOfDay: Int, repeatAttempt: Int): Int = minuteOfDay * 100 + repeatAttempt
+
+        fun minuteOfDay(timestamp: Long): Int {
+            val cal = Calendar.getInstance().apply { timeInMillis = timestamp }
+            return cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+        }
+
+        /** نزدیک‌ترین زمان آینده برای ساعت:دقیقه مشخص. */
+        fun nextOccurrence(hour: Int, minute: Int, nowMillis: Long): Long {
+            val cal = Calendar.getInstance().apply {
+                timeInMillis = nowMillis
+                set(Calendar.HOUR_OF_DAY, hour)
+                set(Calendar.MINUTE, minute)
+                set(Calendar.SECOND, 0)
+                set(Calendar.MILLISECOND, 0)
+            }
+            if (cal.timeInMillis <= nowMillis) cal.add(Calendar.DAY_OF_YEAR, 1)
+            return cal.timeInMillis
         }
     }
 }

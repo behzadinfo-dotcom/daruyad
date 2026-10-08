@@ -47,8 +47,17 @@ class MainViewModel(
         viewModelScope.launch {
             _isLoadingSessions.value = true
             try {
-                val sessions = repository.generateDailySessions(Calendar.getInstance())
+                val sessions = repository.generateDailySessions(
+                    Calendar.getInstance(),
+                    userSettings.value.roundingWindowMinutes
+                )
                 _dailySessions.value = sessions
+                // نوبت‌هایی که همه دوزشان ثبت شده، دیگر نیاز به یادآور تکراری ندارند
+                sessions.flatMap { it.doseItems }
+                    .groupBy { AlarmScheduler.minuteOfDay(it.scheduledTime) }
+                    .forEach { (minute, doses) ->
+                        if (doses.none { it.status == "PENDING" }) alarmScheduler.cancelRepeats(minute)
+                    }
             } catch (e: Exception) {
                 _dailySessions.value = emptyList()
             } finally {
@@ -207,7 +216,8 @@ class MainViewModel(
             hour = hour,
             minute = minute,
             triggerAtMillis = System.currentTimeMillis() + 3000, // ۳ ثانیه بعد
-            medicinesSummary = testNames
+            medicinesSummary = testNames,
+            isTest = true
         )
     }
 
